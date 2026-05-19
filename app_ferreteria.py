@@ -5,12 +5,11 @@ import pandas as pd
 
 # Configuración de la página
 st.set_page_config(
-    page_title="Extractor de Códigos Universal - Ferretería",
+    page_title="Extractor de Códigos Avanzado - Ferretería",
     page_icon="🛠️",
     layout="wide"
 )
 
-# Estilos visuales
 st.markdown("""
     <style>
     .main-title {
@@ -33,38 +32,43 @@ st.markdown("""
     </style>
 """, unsafe_allow_html=True)
 
-st.markdown('<div class="main-title">🛠️ Buscador Universal de Códigos</div>', unsafe_allow_html=True)
-st.markdown('<div class="subtitle">Compatible con múltiples proveedores: Todo Ferretero, Ferstol y más</div>', unsafe_allow_html=True)
+st.markdown('<div class="main-title">🛠️ Extractor de Códigos por Bloques</div>', unsafe_allow_html=True)
+st.markdown('<div class="subtitle">Optimizado para catálogos con código abajo del nombre (Formatos complejos)</div>', unsafe_allow_html=True)
 
 # Barra lateral para cargar el catálogo
-st.sidebar.header("📁 Catálogo del Proveedor")
+st.sidebar.header("📁 Carga del PDF")
 uploaded_file = st.sidebar.file_uploader(
-    "Sube el PDF de CUALQUIER proveedor", 
+    "Sube el PDF de tu proveedor", 
     type=["pdf"]
 )
 
-# Función optimizada para extraer texto
-@st.cache_data(show_spinner="Analizando catálogo... Por favor espera.")
-def procesar_catalogo(file):
+# NUEVO MOTOR: Extrae todo el contenido del catálogo y pre-procesa la estructura
+@st.cache_data(show_spinner="Procesando y extrayendo TODO el catálogo... Esto asegura encontrar los códigos ocultos abajo.")
+def procesar_catalogo_completo(file):
     pdf_reader = pypdf.PdfReader(file)
-    paginas_texto = []
+    paginas_datos = []
+    
     for num_pag, pagina in enumerate(pdf_reader.pages):
         texto = pagina.extract_text()
         if texto:
-            paginas_texto.append({"pagina": num_pag + 1, "contenido": texto})
-    return paginas_texto
+            # Guardamos las líneas limpias de la página para poder mirar hacia abajo
+            lineas = [l.strip() for l in texto.split('\n') if l.strip()]
+            paginas_datos.append({
+                "pagina": num_pag + 1,
+                "texto_completo": texto,
+                "lineas": lineas
+            })
+    return paginas_datos
 
 if uploaded_file is not None:
-    catalogo_datos = procesar_catalogo(uploaded_file)
-    st.sidebar.success(f"✅ Catálogo '{uploaded_file.name}' listo.")
+    catalogo_datos = procesar_catalogo_completo(uploaded_file)
+    st.sidebar.success(f"✅ ¡Catálogo completo de '{uploaded_file.name}' indexado con éxito!")
     
-    st.subheader("📝 Pega tu lista de productos")
-    st.write("Escribe tus productos (uno por línea). El sistema buscará de forma inteligente adaptándose al formato del proveedor.")
-    
+    st.subheader("📝 Pega tu lista de productos (Hasta 50 o más)")
     lista_productos_raw = st.text_area(
-        "Lista de productos a consultar:",
-        height=250,
-        placeholder="Ejemplo:\nUnión Americana h i de media\nBencina blanca\nTornillo madera 4"
+        "Lista de productos a consultar (uno por línea):",
+        height=200,
+        placeholder="Ejemplo:\nUnión Americana h i de media\nBencina blanca"
     )
     
     if st.button("🚀 Buscar todos los códigos ahora"):
@@ -73,7 +77,7 @@ if uploaded_file is not None:
         if not productos_a_buscar:
             st.warning("⚠️ Por favor, ingresa al menos un producto.")
         else:
-            st.info(f"🔎 Procesando {len(productos_a_buscar)} productos...")
+            st.info(f"🔎 Analizando {len(productos_a_buscar)} productos en toda la base de datos del PDF...")
             
             tabla_resultados = []
             
@@ -81,59 +85,66 @@ if uploaded_file is not None:
                 palabras_clave = [palabra.lower() for palabra in producto.split() if len(palabra) > 0]
                 
                 codigo_encontrado = "No encontrado"
-                linea_texto_proveedor = "No encontrado en el PDF"
+                contexto_encontrado = "No se halló el producto en el catálogo"
                 pagina_encontrada = "-"
                 
                 if palabras_clave:
+                    # Recorrer las páginas indexadas
                     for item in catalogo_datos:
-                        contenido_pagina_lower = item["contenido"].lower()
+                        texto_pag_lower = item["texto_completo"].lower()
                         
-                        # Comprobar si todas las palabras clave están en la página
-                        if all(palabra in contenido_pagina_lower for palabra in palabras_clave):
-                            lineas = item["contenido"].split('\n')
+                        # Comprobar si la página contiene todas las palabras que buscas
+                        if all(palabra in texto_pag_lower for palabra in palabras_clave):
+                            pagina_encontrada = f"Pág. {item['pagina']}"
+                            lineas = item["lineas"]
                             
-                            for linea in lineas:
-                                linea_lower = linea.lower()
-                                
-                                # Comprobar si la línea tiene las palabras clave
-                                if all(palabra in linea_lower for palabra in palabras_clave):
-                                    pagina_encontrada = f"Pág. {item['pagina']}"
-                                    linea_texto_proveedor = linea.strip()
+                            # Buscar en qué línea está el nombre para mirar lo que hay ABAJO
+                            for i, linea in enumerate(lineas):
+                                if all(palabra in linea.lower() for palabra in palabras_clave):
+                                    contexto_encontrado = linea
                                     
-                                    # Intentar extraer un código limpio con una fórmula más flexible (letras, números, puntos, guiones)
-                                    posibles_codigos = re.findall(r'[A-Z0-9.-]{2,15}', linea.upper())
-                                    # Filtrar palabras comunes cortas
-                                    posibles_codigos = [c for c in posibles_codigos if not c.isalpha() or len(c) > 3]
+                                    # REVISIÓN EN BLOQUE: Miramos la línea del nombre y hasta 3 líneas más abajo
+                                    bloque_texto_abajo = ""
+                                    rango_lineas_abajo = lineas[i:i+4] # Agarra la línea actual y las 3 siguientes
+                                    bloque_texto_abajo = " | ".join(rango_lineas_abajo)
                                     
-                                    if posibles_codigos:
-                                        codigo_encontrado = posibles_codigos[0]
+                                    # NUEVO REGEX: Busca patrones tipo f300, F-300, letras+números o códigos numéricos limpios
+                                    # Evita confundirse con palabras normales de la descripción
+                                    todos_los_codigos = re.findall(r'\b[A-Za-z-]*\d+[A-Za-z0-9-]*\b', bloque_texto_abajo)
+                                    
+                                    # Filtrar códigos válidos (que no sean solo números de página o medidas simples como "10")
+                                    codigos_filtrados = [c for c in todos_los_codigos if len(c) >= 3 and not c.lower() in ['pn10', 'pn16', 'html']]
+                                    
+                                    if codigos_filtrados:
+                                        # Si encuentra un código tipo f300, lo rescata de una
+                                        codigo_encontrado = codigos_filtrados[0]
                                     else:
-                                        # SI NO ENCUENTRA UN CÓDIGO LIMPIO: Te muestra la línea entera del catálogo para que lo veas tú mismo
-                                        codigo_encontrado = "Revisar línea ➔"
+                                        # Si no pilla el patrón limpio, te muestra el pedazo de texto de abajo para que lo veas tú
+                                        codigo_encontrado = rango_lineas_abajo[1] if len(rango_lineas_abajo) > 1 else "Ver catálogo"
                                     break
                             
-                            if pagina_encontrada != "-":
+                            if codigo_encontrado != "No encontrado":
                                 break
                 
                 tabla_resultados.append({
-                    "Producto que Buscaste": producto,
-                    "Código Sugerido": codigo_encontrado,
-                    "Texto Original en Catálogo (Información del Proveedor)": linea_texto_proveedor,
+                    "Producto Solicitado": producto,
+                    "Código Extraído": codigo_encontrado,
+                    "Línea Detectada": contexto_encontrado,
                     "Ubicación": pagina_encontrada
                 })
             
             df_resultados = pd.DataFrame(tabla_resultados)
             
             st.write("---")
-            st.success("🎯 ¡Búsqueda completada!")
+            st.success("🎯 ¡Búsqueda masiva por bloques terminada!")
             st.dataframe(df_resultados, use_container_width=True, hide_index=True)
             
             csv = df_resultados.to_csv(index=False).encode('utf-8')
             st.download_button(
-                label="📥 Descargar lista en Excel/CSV",
+                label="📥 Descargar resultados a Excel",
                 data=csv,
-                file_name="codigos_proveedores_ferreteria.csv",
+                file_name="codigos_ferretera_v5.csv",
                 mime="text/csv",
             )
 else:
-    st.info("💡 Para comenzar, sube el archivo PDF de tu proveedor en la barra lateral izquierda.")
+    st.info("💡 Para comenzar, sube el archivo PDF del proveedor en la barra lateral izquierda.")
