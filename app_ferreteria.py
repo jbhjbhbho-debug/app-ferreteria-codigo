@@ -5,12 +5,12 @@ import pandas as pd
 
 # Configuración de la página
 st.set_page_config(
-    page_title="Extractor de Códigos Múltiple - Ferretería",
+    page_title="Extractor de Códigos Inteligente - Ferretería",
     page_icon="🛠️",
     layout="wide"
 )
 
-# Estilos visuales optimizados
+# Estilos visuales
 st.markdown("""
     <style>
     .main-title {
@@ -33,8 +33,8 @@ st.markdown("""
     </style>
 """, unsafe_allow_html=True)
 
-st.markdown('<div class="main-title">🛠️ Extractor de Códigos en Lote</div>', unsafe_allow_html=True)
-st.markdown('<div class="subtitle">Pega una lista de hasta 50 productos y obtén todos los códigos al instante</div>', unsafe_allow_html=True)
+st.markdown('<div class="main-title">🛠️ Buscador Ferretero Inteligente</div>', unsafe_allow_html=True)
+st.markdown('<div class="subtitle">Búsqueda flexible: Encuentra códigos sin necesidad de escribir el nombre exacto del catálogo</div>', unsafe_allow_html=True)
 
 # Barra lateral para cargar el catálogo
 st.sidebar.header("📁 Catálogo del Proveedor")
@@ -58,82 +58,77 @@ if uploaded_file is not None:
     catalogo_datos = procesar_catalogo(uploaded_file)
     st.sidebar.success(f"✅ Catálogo '{uploaded_file.name}' listo.")
     
-    st.subheader("📝 Pega tu lista de productos aquí")
-    st.write("Escribe o pega tus productos (uno por línea). Por ejemplo, puedes copiar una lista desde Excel o WhatsApp:")
+    st.subheader("📝 Pega tu lista de productos")
+    st.write("Escribe tus productos (uno por línea). ¡Ya no importa si no pones el nombre exacto o si te faltan detalles técnicos!")
     
-    # Cuadro de texto grande para recibir múltiples líneas
     lista_productos_raw = st.text_area(
         "Lista de productos a consultar:",
         height=250,
-        placeholder="Ejemplo:\nBencina Blanca\nTornillo Madera 4\nCinta aisladora\nSilicona líquida"
+        placeholder="Ejemplo:\nUnión Americana h i de media\nBencina blanca\nTornillo madera 4"
     )
     
     if st.button("🚀 Buscar todos los códigos ahora"):
-        # Limpiar la lista: separar por saltos de línea y quitar espacios en blanco
         productos_a_buscar = [p.strip() for p in lista_productos_raw.split('\n') if p.strip()]
         
         if not productos_a_buscar:
-            st.warning("⚠️ Por favor, ingresa al menos un producto en la lista.")
+            st.warning("⚠️ Por favor, ingresa al menos un producto.")
         else:
-            st.info(f"🔎 Procesando {len(productos_a_buscar)} productos en tiempo real...")
+            st.info(f"🔎 Procesando {len(productos_a_buscar)} productos con búsqueda inteligente...")
             
-            # Lista para guardar los resultados finales
             tabla_resultados = []
             
-            # Recorrer cada producto de la lista del usuario
             for producto in productos_a_buscar:
-                termino = producto.lower()
+                # NUEVO: Dividimos tu búsqueda en palabras individuales y limpiamos espacios
+                palabras_clave = [palabra.lower() for palabra in producto.split() if len(palabra) > 0]
+                
                 codigo_encontrado = "No encontrado"
                 pagina_encontrada = "-"
                 
-                # Buscar en el catálogo
-                for item in catalogo_datos:
-                    if termino in item["contenido"].lower():
-                        # Si lo encuentra, extraer las líneas de esa página para aislar el código
-                        lineas = item["contenido"].split('\n')
-                        for linea in lineas:
-                            if termino in linea.lower():
-                                # Buscar patrones de códigos (números, letras y guiones)
-                                posibles_codigos = re.findall(r'[A-Z0-9-]{3,15}', linea.upper())
-                                posibles_codigos = [c for c in posibles_codigos if not c.isalpha() or len(c) > 4]
+                if palabras_clave:
+                    # Buscar en el catálogo
+                    for item in catalogo_datos:
+                        contenido_pagina_lower = item["contenido"].lower()
+                        
+                        # NUEVO: Verifica que TODAS tus palabras clave estén en la página (no importa el orden)
+                        if all(palabra in contenido_pagina_lower for palabra in palabras_clave):
+                            
+                            # Si la página tiene todas las palabras, buscamos la línea exacta
+                            lineas = item["contenido"].split('\n')
+                            for linea in lineas:
+                                linea_lower = linea.lower()
                                 
-                                if posibles_codigos:
-                                    codigo_encontrado = posibles_codigos[0]
-                                    pagina_encontrada = f"Pág. {item['pagina']}"
-                                    break
-                        if codigo_encontrado != "No encontrado":
-                            break
+                                # Si la línea contiene la mayoría o todas las palabras clave, extraemos el código
+                                if all(palabra in linea_lower for palabra in palabras_clave):
+                                    posibles_codigos = re.findall(r'[A-Z0-9-]{3,15}', linea.upper())
+                                    posibles_codigos = [c for c in posibles_codigos if not c.isalpha() or len(c) > 4]
+                                    
+                                    if posibles_codigos:
+                                        codigo_encontrado = posibles_codigos[0]
+                                        pagina_encontrada = f"Pág. {item['pagina']}"
+                                        break
+                            
+                            # Si ya encontramos el código en esta página, no seguimos buscando para ahorrar tiempo
+                            if codigo_encontrado != "No encontrado":
+                                break
                 
-                # Agregar a nuestra estructura de resultados
                 tabla_resultados.append({
-                    "Producto Solicitado": producto,
+                    "Producto que Tú Buscaste": producto,
                     "Código del Proveedor": codigo_encontrado,
                     "Ubicación": pagina_encontrada
                 })
             
-            # Convertir a un formato de tabla (Pandas DataFrame) para mostrarlo impecable
             df_resultados = pd.DataFrame(tabla_resultados)
             
             st.write("---")
-            st.success("🎯 ¡Búsqueda en lote completada!")
-            
-            # Mostrar la tabla en pantalla completa
+            st.success("🎯 ¡Búsqueda completada con éxito!")
             st.dataframe(df_resultados, use_container_width=True, hide_index=True)
             
-            # Opción extra: Permitir al usuario descargar la lista a Excel o CSV
             csv = df_resultados.to_csv(index=False).encode('utf-8')
             st.download_button(
-                label="📥 Descargar esta lista en formato Excel/CSV",
+                label="📥 Descargar lista en Excel/CSV",
                 data=csv,
-                file_name="codigos_ferreteria_encontrados.csv",
+                file_name="codigos_busqueda_inteligente.csv",
                 mime="text/csv",
             )
 else:
     st.info("💡 Para comenzar, sube el archivo PDF del proveedor en la barra lateral izquierda.")
-    st.markdown("""
-    ### Cómo usar el modo masivo:
-    1. **Sube el catálogo** del proveedor a la izquierda.
-    2. **Copia tu lista** de notas, WhatsApp o un Excel (hasta 50 productos o más).
-    3. **Pégala** en el cuadro central.
-    4. Presiona **"Buscar todos los códigos ahora"** y el sistema te entregará una lista limpia con todos los códigos ordenados al tiro. ¡Incluso puedes descargar el resultado!
-    """)
