@@ -1,142 +1,139 @@
 import streamlit as st
 import pypdf
 import re
+import pandas as pd
 
-# Configuración de la página para que se adapte a Computadora y Celular
+# Configuración de la página
 st.set_page_config(
-    page_title="Extractor de Códigos - Ferretería",
+    page_title="Extractor de Códigos Múltiple - Ferretería",
     page_icon="🛠️",
-    layout="centered"
+    layout="wide"
 )
 
-# Estilos personalizados para mejorar la visualización en móviles y PC
+# Estilos visuales optimizados
 st.markdown("""
     <style>
     .main-title {
-        font-size: 24pt;
+        font-size: 26pt;
         font-weight: bold;
         color: #1E3A8A;
         text-align: center;
-        margin-bottom: 10px;
+        margin-bottom: 5px;
     }
     .subtitle {
-        font-size: 11pt;
+        font-size: 12pt;
         color: #4B5563;
         text-align: center;
         margin-bottom: 25px;
     }
-    .code-box {
-        background-color: #F3F4F6;
-        padding: 15px;
-        border-radius: 8px;
-        border-left: 5px solid #10B981;
-        margin-top: 10px;
+    th {
+        background-color: #1E3A8A !important;
+        color: white !important;
     }
     </style>
 """, unsafe_allow_html=True)
 
-st.markdown('<div class="main-title">🛠️ Asistente de Códigos Ferreteros</div>', unsafe_allow_html=True)
-st.markdown('<div class="subtitle">Sube el catálogo de tu proveedor y cambia nombres de productos por sus códigos al instante</div>', unsafe_allow_html=True)
+st.markdown('<div class="main-title">🛠️ Extractor de Códigos en Lote</div>', unsafe_allow_html=True)
+st.markdown('<div class="subtitle">Pega una lista de hasta 50 productos y obtén todos los códigos al instante</div>', unsafe_allow_html=True)
 
-# 1. Zona de Carga del Catálogo en la barra lateral
-st.sidebar.header("📁 Carga de Catálogos")
+# Barra lateral para cargar el catálogo
+st.sidebar.header("📁 Catálogo del Proveedor")
 uploaded_file = st.sidebar.file_uploader(
     "Sube el PDF del proveedor (ej. Todo Ferretero, Ferstol)", 
-    type=["pdf"],
-    help="Soporta PDFs pesados con texto e imágenes"
+    type=["pdf"]
 )
 
-# Función optimizada para leer el PDF en memoria sin ralentizar la app
-@st.cache_data(show_spinner="Analizando y extrayendo los códigos del catálogo... Por favor espera.")
+# Función optimizada para extraer texto
+@st.cache_data(show_spinner="Analizando catálogo... Por favor espera.")
 def procesar_catalogo(file):
     pdf_reader = pypdf.PdfReader(file)
     paginas_texto = []
-    
-    # Recorremos el PDF extrayendo el texto de cada página
     for num_pag, pagina in enumerate(pdf_reader.pages):
         texto = pagina.extract_text()
         if texto:
-            paginas_texto.append({
-                "pagina": num_pag + 1,
-                "contenido": texto
-            })
+            paginas_texto.append({"pagina": num_pag + 1, "contenido": texto})
     return paginas_texto
 
-# Lógica principal de la aplicación
 if uploaded_file is not None:
-    # Procesar el archivo subido
     catalogo_datos = procesar_catalogo(uploaded_file)
-    st.success(f"✅ ¡Catálogo '{uploaded_file.name}' procesado con éxito! Listo para buscar.")
+    st.sidebar.success(f"✅ Catálogo '{uploaded_file.name}' listo.")
     
-    st.write("---")
-    st.subheader("🔍 Buscador de Productos")
+    st.subheader("📝 Pega tu lista de productos aquí")
+    st.write("Escribe o pega tus productos (uno por línea). Por ejemplo, puedes copiar una lista desde Excel o WhatsApp:")
     
-    # Campo de entrada de texto para el usuario
-    producto_buscado = st.text_input(
-        "Escribe el nombre del producto que necesitas (ej: Bencina Blanca, Tornillo 4, etc.):",
-        placeholder="Escribe aquí..."
+    # Cuadro de texto grande para recibir múltiples líneas
+    lista_productos_raw = st.text_area(
+        "Lista de productos a consultar:",
+        height=250,
+        placeholder="Ejemplo:\nBencina Blanca\nTornillo Madera 4\nCinta aisladora\nSilicona líquida"
     )
     
-    if producto_buscado:
-        st.info(f"Buscando código para: **{producto_buscado}**...")
+    if st.button("🚀 Buscar todos los códigos ahora"):
+        # Limpiar la lista: separar por saltos de línea y quitar espacios en blanco
+        productos_a_buscar = [p.strip() for p in lista_productos_raw.split('\n') if p.strip()]
         
-        encontrado = False
-        resultados = []
-        
-        # Convertimos a minúsculas para que la búsqueda no falle por mayúsculas/minúsculas
-        termino_busqueda = producto_buscado.lower()
-        
-        for item in catalogo_datos:
-            contenido_pagina = item["contenido"]
-            if termino_busqueda in contenido_pagina.lower():
-                encontrado = True
-                
-                # Intentar buscar patrones comunes de códigos cerca del texto (letras y números guiones)
-                # Este regex busca códigos comunes como TF-1234, FE-445, 1024-A, etc.
-                lineas = contenido_pagina.split('\n')
-                for linea in lineas:
-                    if termino_busqueda in linea.lower():
-                        # Buscar posibles códigos en la misma línea (secuencias de números o alfanuméricas)
-                        posibles_codigos = re.findall(r'[A-Z0-9-]{3,15}', linea.upper())
-                        # Filtrar palabras comunes que el regex pueda confundir como código
-                        posibles_codigos = [c for c in posibles_codigos if not c.isalpha() or len(c) > 4]
-                        
-                        resultados.append({
-                            "pagina": item["pagina"],
-                            "linea_texto": linea,
-                            "codigos": posibles_codigos
-                        })
-        
-        # Mostrar los resultados al usuario
-        if encontrado:
-            st.success("🎯 ¡Código encontrado!")
-            
-            for res in resultados:
-                st.markdown(f"**En la página {res['pagina']} se encontró la siguiente coincidencia:**")
-                st.markdown(f"*Texto original en catálogo:* `... {res['linea_texto']} ...`")
-                
-                if res['codigos']:
-                    codigo_sugerido = res['codigos'][0]
-                    st.markdown(
-                        f"""<div class="code-box">
-                        <strong>Intercambio Exitoso:</strong><br>
-                        El nombre <b>'{producto_buscado}'</b> corresponde al Código: <span style='font-size:14pt; color:#065F46;'><b>{codigo_sugerido}</b></span>
-                        </div>""", 
-                        unsafe_allow_html=True
-                    )
-                else:
-                    st.warning("Se encontró el producto, pero no pudimos separar automáticamente el código del texto. Por favor revisa la línea de arriba.")
+        if not productos_a_buscar:
+            st.warning("⚠️ Por favor, ingresa al menos un producto en la lista.")
         else:
-            st.error(f"❌ No se encontró ningún producto con el nombre '{producto_buscado}' en este catálogo. Intenta con otra palabra clave.")
-
+            st.info(f"🔎 Procesando {len(productos_a_buscar)} productos en tiempo real...")
+            
+            # Lista para guardar los resultados finales
+            tabla_resultados = []
+            
+            # Recorrer cada producto de la lista del usuario
+            for producto in productos_a_buscar:
+                termino = producto.lower()
+                codigo_encontrado = "No encontrado"
+                pagina_encontrada = "-"
+                
+                # Buscar en el catálogo
+                for item in catalogo_datos:
+                    if termino in item["contenido"].lower():
+                        # Si lo encuentra, extraer las líneas de esa página para aislar el código
+                        lineas = item["contenido"].split('\n')
+                        for linea in lineas:
+                            if termino in linea.lower():
+                                # Buscar patrones de códigos (números, letras y guiones)
+                                posibles_codigos = re.findall(r'[A-Z0-9-]{3,15}', linea.upper())
+                                posibles_codigos = [c for c in posibles_codigos if not c.isalpha() or len(c) > 4]
+                                
+                                if posibles_codigos:
+                                    codigo_encontrado = posibles_codigos[0]
+                                    pagina_encontrada = f"Pág. {item['pagina']}"
+                                    break
+                        if codigo_encontrado != "No encontrado":
+                            break
+                
+                # Agregar a nuestra estructura de resultados
+                tabla_resultados.append({
+                    "Producto Solicitado": producto,
+                    "Código del Proveedor": codigo_encontrado,
+                    "Ubicación": pagina_encontrada
+                })
+            
+            # Convertir a un formato de tabla (Pandas DataFrame) para mostrarlo impecable
+            df_resultados = pd.DataFrame(tabla_resultados)
+            
+            st.write("---")
+            st.success("🎯 ¡Búsqueda en lote completada!")
+            
+            # Mostrar la tabla en pantalla completa
+            st.dataframe(df_resultados, use_container_width=True, hide_index=True)
+            
+            # Opción extra: Permitir al usuario descargar la lista a Excel o CSV
+            csv = df_resultados.to_csv(index=False).encode('utf-8')
+            st.download_button(
+                label="📥 Descargar esta lista en formato Excel/CSV",
+                data=csv,
+                file_name="codigos_ferreteria_encontrados.csv",
+                mime="text/csv",
+            )
 else:
-    # Pantalla de espera cuando no se ha subido ningún archivo
-    st.info("💡 Para empezar, arrastra o selecciona el archivo PDF de tu proveedor en la barra lateral izquierda.")
-    
-    # Instrucciones de uso rápido para el trabajador
+    st.info("💡 Para comenzar, sube el archivo PDF del proveedor en la barra lateral izquierda.")
     st.markdown("""
-    ### ¿Cómo usar la aplicación en tu día a día?
-    1. **Sube el PDF:** En la barra izquierda subes el catálogo de *Ferstol* o *Todo Ferretero* (puedes guardarlo en tu celular o PC).
-    2. **Escribe el Producto:** En el buscador del centro pones el artículo que te pide el cliente.
-    3. **Obtén el Código:** La aplicación reemplazará el nombre por el código en un cuadro verde al instante, indicándote la página del catálogo.
+    ### Cómo usar el modo masivo:
+    1. **Sube el catálogo** del proveedor a la izquierda.
+    2. **Copia tu lista** de notas, WhatsApp o un Excel (hasta 50 productos o más).
+    3. **Pégala** en el cuadro central.
+    4. Presiona **"Buscar todos los códigos ahora"** y el sistema te entregará una lista limpia con todos los códigos ordenados al tiro. ¡Incluso puedes descargar el resultado!
     """)
