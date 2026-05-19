@@ -44,7 +44,7 @@ st.markdown('<div class="main-title">🛠️ Central de Códigos Ferreteros</div
 st.markdown('<div class="subtitle">Sube y consulta los catálogos de tus 5 proveedores principales en un solo lugar</div>', unsafe_allow_html=True)
 
 # Inicializar la memoria de los catálogos en la aplicación si no existen
-if "catalogos" not do in st.session_state:
+if "catalogos" not in st.session_state:
     st.session_state.catalogos = {
         "Todo Ferretero": None,
         "Ferres Tools": None,
